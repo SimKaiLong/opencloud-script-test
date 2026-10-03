@@ -1,0 +1,100 @@
+name: test
+
+# Fresh installs and upgrades of the OpenCloud script, each in its own
+# disposable runner acting as an Incus host.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: ProxmoxVE fork holding the branches under test
+        default: SimKaiLong/ProxmoxVE
+      patch_ref:
+        description: Commit of the change under test
+        default: 07d44239fb5b393fc4533be171ef6e279bfcc747
+      base_74_ref:
+        description: Commit that installs 7.4.0 (upstream main as of 2026-10-03)
+        default: 7a9fd31696451fa34de0b3d41af5c9ab9feb4566
+      base_62_ref:
+        description: Commit that installs 6.2.0 (installer from 3edaa3e3)
+        default: 19bf8fdcddc67c39e5fda9163e12d24945a460f1
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: fresh-amd64, runner: ubuntu-24.04, kind: fresh, base: patch }
+          - { name: fresh-arm64, runner: ubuntu-24.04-arm, kind: fresh, base: patch }
+          - { name: 7.4-to-8-amd64, runner: ubuntu-24.04, kind: update, base: base_74, from: 7.4.0, rerun: true }
+          - { name: 7.4-to-8-arm64, runner: ubuntu-24.04-arm, kind: update, base: base_74, from: 7.4.0 }
+          - { name: 6.2-to-8-amd64, runner: ubuntu-24.04, kind: update, base: base_62, from: 6.2.0, migration: true }
+    env:
+      PATCH_URL: https://raw.githubusercontent.com/${{ inputs.repo }}/${{ inputs.patch_ref }}
+      INSTALL_URL: https://raw.githubusercontent.com/${{ inputs.repo }}/${{ matrix.base == 'patch' && inputs.patch_ref || matrix.base == 'base_74' && inputs.base_74_ref || inputs.base_62_ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host prep
+        run: sudo -E bash harness/host-prep.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Install via ct/opencloud.sh
+        run: sudo -E bash harness/run-install.sh opencloud "$INSTALL_URL"
+
+      - name: TLS, DNS and basic auth
+        run: sudo bash harness/tls-setup.sh
+
+      # ── upgrade jobs ──
+      - name: Seed data
+        if: matrix.kind == 'update'
+        run: sudo bash harness/seed.sh
+
+      - name: Verify before update
+        if: matrix.kind == 'update'
+        run: sudo bash harness/verify.sh baseline "${{ matrix.from }}"
+
+      - name: Update to patch
+        id: update
+        if: matrix.kind == 'update'
+        run: sudo bash harness/run-update.sh "$PATCH_URL" update
+
+      - name: Verify after update
+        if: ${{ !cancelled() && steps.update.outcome == 'success' }}
+        run: sudo bash harness/verify.sh update
+
+      - name: Verify 6.x migration
+        if: ${{ !cancelled() && steps.update.outcome == 'success' && matrix.migration }}
+        run: sudo bash harness/verify.sh migration
+
+      - name: Update again (should be a no-op)
+        id: rerun
+        if: ${{ !cancelled() && steps.update.outcome == 'success' && matrix.rerun }}
+        run: sudo bash harness/run-update.sh "$PATCH_URL" rerun
+
+      - name: Verify second run
+        if: ${{ !cancelled() && steps.rerun.outcome == 'success' }}
+        run: sudo bash harness/verify.sh rerun
+
+      # ── fresh jobs ──
+      - name: Verify fresh install
+        if: matrix.kind == 'fresh'
+        run: sudo bash harness/verify.sh fresh
+
+      - name: Collect
+        if: always()
+        run: sudo bash harness/collect.sh artifacts && sudo chown -R "$USER" artifacts
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ matrix.name }}
+          path: artifacts

@@ -13,4 +13,6 @@ export COMMUNITY_SCRIPTS_URL="${2:?scripts base url}"
 export PHS_SILENT=1 mode=default DIAGNOSTICS=no TERM=xterm
 
 curl -fsSL "${COMMUNITY_SCRIPTS_URL}/ct/opencloud.sh" -o /tmp/ct-opencloud.sh
-expect "${here}/install-ct.exp" /tmp/ct-opencloud.sh
+# `opencloud init` prints the generated admin password; logs are public.
+set -o pipefail
+expect "${here}/install-ct.exp" /tmp/ct-opencloud.sh | sed -u -E 's/(password +: ).*/\1[redacted]/'

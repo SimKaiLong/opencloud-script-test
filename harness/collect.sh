@@ -19,4 +19,7 @@ for ct in $(incus list -c n -f csv); do
   incus exec "$ct" -- bash -c 'cat /root/.install-*.log' >"$out/${ct}-install.log" 2>&1
   echo "::endgroup::"
 done
+cp /tmp/oc-test/*.log /tmp/oc-test/last-search.xml "$out/" 2>/dev/null
+# Artifacts are public: drop generated passwords.
+sed -i -E 's/(password +: ).*/\1[redacted]/' "$out"/*.log "$out"/*.txt 2>/dev/null
 exit 0
