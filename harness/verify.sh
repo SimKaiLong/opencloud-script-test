@@ -58,6 +58,46 @@ service_account_matches() {
   echo "sharing=${sharing} activitylog=${activity}"
   [[ -n "$sharing" && "$sharing" == "$activity" ]]
 }
+# ── Integrity (against seed.sh's manifest) ──────────────────────────────────
+users_unchanged() {
+  diff <(api GET /graph/v1.0/users | jq -r '[.value[] | "\(.id) \(.onPremisesSamAccountName)"] | sort | .[]') "${STATE_DIR}/users.txt"
+}
+user_can_login() { api_as "$1" "$USER_PW" GET /graph/v1.0/me | jq -e --arg u "$1" '.onPremisesSamAccountName == $u'; }
+
+contents_intact() {
+  local drive path sum fid now bad=0 n=0
+  while IFS='|' read -r drive path sum fid; do
+    n=$((n + 1))
+    now="$(api GET "/dav/spaces/${drive}/${path}" | sha256sum | cut -d' ' -f1)"
+    [[ "$now" == "$sum" ]] || { bad=$((bad + 1)); echo "checksum mismatch: ${path}"; }
+  done <"${STATE_DIR}/manifest.txt"
+  echo "${n} files compared, ${bad} mismatched"
+  ((n > 300 && bad == 0))
+}
+fileids_unchanged() {
+  local drive path sum fid now bad=0 n=0
+  while IFS='|' read -r drive path sum fid; do
+    n=$((n + 1))
+    now="$(api PROPFIND "/dav/spaces/${drive}/${path}" -H 'Depth: 0' -H 'Content-Type: application/xml' \
+      -d '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:fileid/></d:prop></d:propfind>' |
+      sed -n 's:.*<oc\:fileid>\([^<]*\)</oc\:fileid>.*:\1:p' | head -1)"
+    [[ -n "$fid" && "$now" == "$fid" ]] || { bad=$((bad + 1)); echo "fileid changed: ${path} ${fid} -> ${now}"; }
+  done <"${STATE_DIR}/manifest.txt"
+  echo "${n} file IDs compared, ${bad} changed"
+  ((n > 300 && bad == 0))
+}
+versions_kept() {
+  local fid count
+  fid="$(awk -F'|' '$2 == "zebra-quokka-8841.txt" {print $4}' "${STATE_DIR}/manifest.txt")"
+  count="$(api PROPFIND "/remote.php/dav/meta/${fid}/v" -H 'Depth: 1' | grep -o '<d:response>' | wc -l)"
+  # The listing includes the collection itself.
+  echo "noncurrent versions: $((count - 1))"
+  ((count - 1 >= 2))
+}
+trash_kept() {
+  api PROPFIND "/remote.php/dav/spaces/trash-bin/${PERSONAL_ID}" -H 'Depth: 1' | grep -q 'deleted-otter-6620.txt'
+}
+
 fresh_upload_indexed() {
   local pid
   pid="$(api GET /graph/v1.0/me/drive | jq -r .id)"
@@ -76,6 +116,10 @@ baseline)
   check "bob is a QA-Space member" bob_is_member
   check "alice sees shared folder" alice_sees_share
   check "public link opens with password" public_link_works
+  check "alice can log in" user_can_login alice
+  check "bob can log in" user_can_login bob
+  check "file has 2 older versions" versions_kept
+  check "deleted file is in trash" trash_kept
   ct sha256sum /etc/opencloud/opencloud.env >"${STATE_DIR}/env.sha"
   ;;
 fresh)
@@ -101,6 +145,13 @@ update)
   check "bob is still a QA-Space member" bob_is_member
   check "alice still sees shared folder" alice_sees_share
   check "public link still opens with password" public_link_works
+  check "user list unchanged" users_unchanged
+  check "alice can still log in" user_can_login alice
+  check "bob can still log in" user_can_login bob
+  check "all 303 file contents intact (sha256)" contents_intact
+  check "all file IDs unchanged (no client resync)" fileids_unchanged
+  check "older file versions kept" versions_kept
+  check "trash kept" trash_kept
   check "opencloud.env unchanged" env_unchanged
   check "admin password unchanged" admin_pw_unchanged
   check "Collabora registered via WOPI discovery" poll 180 collabora_registered

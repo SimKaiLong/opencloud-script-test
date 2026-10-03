@@ -67,6 +67,42 @@ api POST "/graph/v1beta1/drives/${PERSONAL_ID}/items/${NESTED_ID}/permissions/${
 echo "link token=${LINK_TOKEN}"
 echo "::endgroup::"
 
+echo "::group::Versions, trash, bulk data"
+# Two more uploads → the file has 2 noncurrent versions.
+api PUT "/dav/spaces/${PERSONAL_ID}/zebra-quokka-8841.txt" --data-binary 'personal file v2' -o /dev/null
+api PUT "/dav/spaces/${PERSONAL_ID}/zebra-quokka-8841.txt" --data-binary 'personal file v3 (current)' -o /dev/null
+
+api PUT "/dav/spaces/${PERSONAL_ID}/deleted-otter-6620.txt" --data-binary 'this goes to the trash' -o /dev/null
+api DELETE "/dav/spaces/${PERSONAL_ID}/deleted-otter-6620.txt" -o /dev/null
+
+api MKCOL "/dav/spaces/${PERSONAL_ID}/bulk" -o /dev/null
+tmp="$(mktemp)"
+for i in $(seq -w 1 300); do
+  head -c $((1024 + RANDOM % 8192)) /dev/urandom >"$tmp"
+  api PUT "/dav/spaces/${PERSONAL_ID}/bulk/blob-${i}.bin" --data-binary "@${tmp}" -o /dev/null
+done
+rm -f "$tmp"
+echo "uploaded 300 bulk files"
+echo "::endgroup::"
+
+echo "::group::Integrity manifest"
+# <drive>|<path>|<sha256>|<fileid> for every file, as the server returns it.
+manifest="${STATE_DIR}/manifest.txt"
+: >"$manifest"
+add_to_manifest() {
+  local drive="$1" path="$2" sum
+  sum="$(api GET "/dav/spaces/${drive}/${path}" | sha256sum | cut -d' ' -f1)"
+  echo "${drive}|${path}|${sum}|$(file_id "$drive" "$path")" >>"$manifest"
+}
+for p in zebra-quokka-8841.txt nested/umbrella-falcon-2290.md; do add_to_manifest "$PERSONAL_ID" "$p"; done
+add_to_manifest "$SPACE_ID" marmot-lantern-5107.txt
+for i in $(seq -w 1 300); do add_to_manifest "$PERSONAL_ID" "bulk/blob-${i}.bin"; done
+wc -l <"$manifest"
+
+api GET /graph/v1.0/users | jq -r '[.value[] | "\(.id) \(.onPremisesSamAccountName)"] | sort | .[]' >"${STATE_DIR}/users.txt"
+cat "${STATE_DIR}/users.txt"
+echo "::endgroup::"
+
 # Drive IDs contain '$', so quote every value.
 for v in USER_PW LINK_PW ALICE_ID BOB_ID PERSONAL_ID SPACE_ID NESTED_ID LINK_TOKEN; do
   printf '%s=%q\n' "$v" "${!v}"
