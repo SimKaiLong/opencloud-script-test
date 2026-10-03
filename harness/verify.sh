@@ -32,13 +32,18 @@ public_link_code() {
   curl -sS --cacert "$CA_FILE" -o /dev/null -w '%{http_code}' -X PROPFIND -H 'Depth: 1' "$@"
 }
 public_link_works() {
-  local code
-  code="$(public_link_code -u "public:${LINK_PW}" "${OC_URL}/dav/public-files/${LINK_TOKEN}")"
-  echo "with password: HTTP ${code}"
-  [[ "$code" == 207 ]] && return 0
+  local code path
+  # 6.x only routes the legacy /remote.php path; 7.x+ serves both.
+  for path in /dav/public-files /remote.php/dav/public-files; do
+    code="$(public_link_code -u "public:${LINK_PW}" "${OC_URL}${path}/${LINK_TOKEN}")"
+    echo "${path} with password: HTTP ${code}"
+    [[ "$code" == 207 ]] || continue
+    # The password must actually be enforced.
+    code="$(public_link_code "${OC_URL}${path}/${LINK_TOKEN}")"
+    echo "${path} without password: HTTP ${code}"
+    [[ "$code" == 401 ]] && return 0
+  done
   # Diagnostics only
-  echo "without password: HTTP $(public_link_code "${OC_URL}/dav/public-files/${LINK_TOKEN}")"
-  echo "legacy path: HTTP $(public_link_code -u "public:${LINK_PW}" "${OC_URL}/remote.php/dav/public-files/${LINK_TOKEN}")"
   api GET "/graph/v1beta1/drives/${PERSONAL_ID}/items/${NESTED_ID}/permissions" | jq -c '.value[] | select(.link) | {id, link: .link.type, hasPassword: .hasPassword}'
   return 1
 }
