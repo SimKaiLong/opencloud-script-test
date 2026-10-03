@@ -55,9 +55,15 @@ api POST "/graph/v1beta1/drives/${PERSONAL_ID}/items/${NESTED_ID}/invite" -H 'Co
   \"recipients\": [{\"objectId\": \"${ALICE_ID}\", \"@libre.graph.recipient.type\": \"user\"}],
   \"roles\": [\"${ROLE_VIEWER}\"]}" -o /dev/null
 
-LINK_URL="$(api POST "/graph/v1beta1/drives/${PERSONAL_ID}/items/${NESTED_ID}/createLink" \
-  -H 'Content-Type: application/json' -d "{\"type\": \"view\", \"password\": \"${LINK_PW}\"}" | jq -r .link.webUrl)"
+link_json="$(api POST "/graph/v1beta1/drives/${PERSONAL_ID}/items/${NESTED_ID}/createLink" \
+  -H 'Content-Type: application/json' -d "{\"type\": \"view\", \"password\": \"${LINK_PW}\"}")"
+LINK_URL="$(jq -r .link.webUrl <<<"$link_json")"
 LINK_TOKEN="${LINK_URL##*/}"
+# Older releases may ignore "password" on createLink; set it explicitly.
+link_perm="$(jq -r .id <<<"$link_json")"
+api POST "/graph/v1beta1/drives/${PERSONAL_ID}/items/${NESTED_ID}/permissions/${link_perm}/setPassword" \
+  -H 'Content-Type: application/json' -d "{\"password\": \"${LINK_PW}\"}" -o /dev/null ||
+  echo "setPassword not accepted (createLink password should apply)"
 echo "link token=${LINK_TOKEN}"
 echo "::endgroup::"
 

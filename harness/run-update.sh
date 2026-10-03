@@ -13,5 +13,5 @@ script="$(curl -fsSL "${url}/ct/opencloud.sh")"
 # LXC_PLATFORM=container: take the Proxmox container path (ui/menu.func
 # start), not the Incus wrapper, so this is what PVE users execute.
 set -o pipefail
-ct env LXC_PLATFORM=container PHS_SILENT=1 TERM=dumb bash -c "$script" 2>&1 |
+ct env LXC_PLATFORM=container PHS_SILENT=1 TERM=xterm bash -c "$script" 2>&1 |
   sed -u 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | tee "${STATE_DIR}/${label}.log"

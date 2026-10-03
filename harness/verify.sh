@@ -28,11 +28,19 @@ search_poll() { poll "${3:-600}" search_finds "$1" "$2" || { cat "${STATE_DIR}/l
 
 bob_is_member() { api GET "/graph/v1beta1/drives/${SPACE_ID}/root/permissions" | jq -e --arg id "$BOB_ID" '[.value[].grantedToV2.user.id] | index($id) != null'; }
 alice_sees_share() { api_as alice "$USER_PW" GET /graph/v1beta1/me/drive/sharedWithMe | jq -e '[.value[].name] | index("nested") != null'; }
+public_link_code() {
+  curl -sS --cacert "$CA_FILE" -o /dev/null -w '%{http_code}' -X PROPFIND -H 'Depth: 1' "$@"
+}
 public_link_works() {
   local code
-  code="$(curl -sS --cacert "$CA_FILE" -o /dev/null -w '%{http_code}' -u "public:${LINK_PW}" -X PROPFIND -H 'Depth: 1' "${OC_URL}/dav/public-files/${LINK_TOKEN}")"
-  echo "HTTP ${code}"
-  [[ "$code" == 207 ]]
+  code="$(public_link_code -u "public:${LINK_PW}" "${OC_URL}/dav/public-files/${LINK_TOKEN}")"
+  echo "with password: HTTP ${code}"
+  [[ "$code" == 207 ]] && return 0
+  # Diagnostics only
+  echo "without password: HTTP $(public_link_code "${OC_URL}/dav/public-files/${LINK_TOKEN}")"
+  echo "legacy path: HTTP $(public_link_code -u "public:${LINK_PW}" "${OC_URL}/remote.php/dav/public-files/${LINK_TOKEN}")"
+  api GET "/graph/v1beta1/drives/${PERSONAL_ID}/items/${NESTED_ID}/permissions" | jq -c '.value[] | select(.link) | {id, link: .link.type, hasPassword: .hasPassword}'
+  return 1
 }
 log_has() { grep -q -- "$2" "${STATE_DIR}/$1.log"; }
 log_lacks() { ! grep -q -- "$2" "${STATE_DIR}/$1.log"; }
