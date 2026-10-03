@@ -15,8 +15,22 @@ ct() {
   incus exec "$(ct_name)" -- "$@"
 }
 
+# yaml_unquote: drop YAML single/double quotes ('' is an escaped ' inside single quotes)
+yaml_unquote() {
+  local v="$1"
+  if [[ "$v" == \'*\' ]]; then
+    v="${v:1:${#v}-2}"
+    v="${v//\'\'/\'}"
+  elif [[ "$v" == \"*\" ]]; then
+    v="${v:1:${#v}-2}"
+  fi
+  printf '%s' "$v"
+}
+
 admin_password() {
-  ct sed -n '/^idm:/,/^[a-z]/p' /etc/opencloud/opencloud.yaml | awk '/admin_password:/ {print $2}'
+  local raw
+  raw="$(ct sed -n '/^idm:/,/^[a-z]/p' /etc/opencloud/opencloud.yaml | sed -n 's/^ *admin_password: //p' | head -1)"
+  yaml_unquote "$raw"
 }
 
 # api <method> <path> [curl args...] — authenticated call as admin, body on stdout.

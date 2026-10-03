@@ -61,14 +61,8 @@ LINK_TOKEN="${LINK_URL##*/}"
 echo "link token=${LINK_TOKEN}"
 echo "::endgroup::"
 
-cat >"${STATE_DIR}/seed.env" <<EOF
-USER_PW='${USER_PW}'
-LINK_PW='${LINK_PW}'
-ALICE_ID=${ALICE_ID}
-BOB_ID=${BOB_ID}
-PERSONAL_ID=${PERSONAL_ID}
-SPACE_ID=${SPACE_ID}
-NESTED_ID=${NESTED_ID}
-LINK_TOKEN=${LINK_TOKEN}
-EOF
+# Drive IDs contain '$', so quote every value.
+for v in USER_PW LINK_PW ALICE_ID BOB_ID PERSONAL_ID SPACE_ID NESTED_ID LINK_TOKEN; do
+  printf '%s=%q\n' "$v" "${!v}"
+done >"${STATE_DIR}/seed.env"
 echo "Seeded."
