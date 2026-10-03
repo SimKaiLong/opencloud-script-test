@@ -1,0 +1,41 @@
+name: spike
+
+# Phase 0: can a GitHub runner build an OpenCloud container unattended
+# through the community-scripts Incus backend?
+
+on:
+  workflow_dispatch:
+    inputs:
+      scripts_url:
+        description: Raw base URL of the ProxmoxVE tree to install from
+        default: https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host prep
+        run: sudo -E bash harness/host-prep.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Install via ct/opencloud.sh
+        run: sudo -E bash harness/run-install.sh oc-spike "$SCRIPTS_URL"
+        env:
+          SCRIPTS_URL: ${{ inputs.scripts_url }}
+
+      - name: Collect
+        if: always()
+        run: sudo bash harness/collect.sh artifacts && sudo chown -R "$USER" artifacts
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike-logs
+          path: artifacts

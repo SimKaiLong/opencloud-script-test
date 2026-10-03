@@ -1,0 +1,23 @@
+#!/usr/bin/expect -f
+# Run a community-scripts ct/ script under a PTY and answer OpenCloud's
+# install prompts. Without a PTY the Incus backend feeds every `read -p`
+# an empty answer (CS_STDIN_OK=0) and the installer aborts with exit 254.
+#
+# usage: install-ct.exp <path-to-ct-script>
+
+set timeout 2700
+set stty_init "rows 50 cols 200"
+log_user 1
+
+spawn bash [lindex $argv 0]
+expect {
+  -re {FQDN of your Opencloud server} { send "cloud.oc.test\r"; exp_continue }
+  -re {FQDN of your Collabora server} { send "collabora.oc.test\r"; exp_continue }
+  -re {FQDN of your Wopi server}      { send "wopi.oc.test\r"; exp_continue }
+  -re {Select option \[1-2\]}         { send "2\r"; exp_continue }
+  timeout { puts "\n### install-ct.exp: timed out"; exit 124 }
+  eof
+}
+lassign [wait] pid spawnid os_error value
+puts "\n### install-ct.exp: ct script exited with $value"
+exit $value
