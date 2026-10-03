@@ -5,10 +5,27 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 echo "::group::Install Incus, expect, jq"
+# Ubuntu's own incus (6.0.0) rejects `-f csv,noheader`, which the engine uses
+# to list storage pools. Use the upstream (Zabbly) stable build instead.
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://pkgs.zabbly.com/key.asc -o /etc/apt/keyrings/zabbly.asc
+cat >/etc/apt/sources.list.d/zabbly-incus-stable.sources <<EOF
+Enabled: yes
+Types: deb
+URIs: https://pkgs.zabbly.com/incus/stable
+Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
+Components: main
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/zabbly.asc
+EOF
 apt-get update -qq
 apt-get install -y -qq incus expect jq >/dev/null
 incus admin init --auto
 incus version
+# Fail here rather than deep inside the ct script.
+pools="$(incus storage list -f csv,noheader | wc -l)"
+[[ "$pools" -ge 1 ]] || { echo "::error::Incus reports no storage pools"; exit 1; }
+incus storage list
 echo "::endgroup::"
 
 echo "::group::Networking"
