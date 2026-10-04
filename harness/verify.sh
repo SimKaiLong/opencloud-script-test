@@ -143,7 +143,7 @@ update)
   # check-never covers the give-up path and starts the reindex by hand
   [[ "${FAULT:-}" == never ]] || check "update waited for the reindex and reported success" log_has update "Rebuilt search index"
   check "reindex unit indexed every space and exited cleanly" poll 900 reindex_finished
-  check "update printed old-index warning" log_has update "remove the old index"
+  [[ "${FAULT:-}" == never ]] || check "update printed old-index warning" log_has update "remove the old index"
   check "v8 search index (bleve-v*) created" v8_index_exists
   check "old index left in place" old_index_exists
   check "search finds personal file" search_poll quokka zebra-quokka-8841.txt 600
