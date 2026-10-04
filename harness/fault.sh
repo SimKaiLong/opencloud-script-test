@@ -45,7 +45,7 @@ check-late)
   ;;
 check-never)
   summary_header "Search service never comes up"
-  check "update gave up instead of hanging" log_has update "Search index rebuild did not complete"
+  check "update gave up instead of hanging" log_has update "The rebuild did not complete"
   check "update printed a retry command" log_has update "Retry with: "
   check "update still finished" log_has update "Updated successfully"
   restore_search
