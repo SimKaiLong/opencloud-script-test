@@ -54,8 +54,6 @@ reindex_finished() {
   awk -F'[][/]' '/indexed space/ {done = ($2 == $3)} END {exit !done}' "${STATE_DIR}/reindex.log" &&
     grep -q 'opencloud-reindex.service: Deactivated successfully' "${STATE_DIR}/reindex.log"
 }
-log_has() { grep -q -- "$2" "${STATE_DIR}/$1.log"; }
-log_lacks() { ! grep -q -- "$2" "${STATE_DIR}/$1.log"; }
 env_unchanged() { [[ "$(ct sha256sum /etc/opencloud/opencloud.env)" == "$(<"${STATE_DIR}/env.sha")" ]]; }
 admin_pw_unchanged() { [[ "$(admin_password)" == "$ADMIN_PW" ]]; }
 service_account_matches() {
@@ -142,7 +140,8 @@ update)
   summary_header "After update"
   check "version file is ${want}" version_is "$want"
   check "services running" services_up
-  check "update started the reindex unit" log_has update "Started search index rebuild"
+  # check-never covers the give-up path and starts the reindex by hand
+  [[ "${FAULT:-}" == never ]] || check "update waited for the reindex and reported success" log_has update "Rebuilt search index"
   check "reindex unit indexed every space and exited cleanly" poll 900 reindex_finished
   check "update printed old-index warning" log_has update "remove the old index"
   check "v8 search index (bleve-v*) created" v8_index_exists
@@ -174,7 +173,7 @@ migration)
 rerun)
   summary_header "Second update run"
   check "reports no update available" log_has rerun "No update available"
-  check "does not reindex again" log_lacks rerun "search index rebuild"
+  check "does not reindex again" log_lacks rerun "search index"
   check "services running" services_up
   ;;
 *)

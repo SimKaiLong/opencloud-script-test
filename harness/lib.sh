@@ -87,3 +87,7 @@ finish_checks() {
   echo >>"${GITHUB_STEP_SUMMARY:-/dev/null}"
   ((CHECK_FAILS == 0)) || { echo "${CHECK_FAILS} check(s) failed"; exit 1; }
 }
+
+# log_has <label> <text> — search $STATE_DIR/<label>.log from run-update.sh
+log_has() { grep -q -- "$2" "${STATE_DIR}/$1.log"; }
+log_lacks() { ! grep -q -- "$2" "${STATE_DIR}/$1.log"; }
