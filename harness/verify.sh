@@ -47,6 +47,12 @@ public_link_works() {
   api GET "/graph/v1beta1/drives/${PERSONAL_ID}/items/${NESTED_ID}/permissions" | jq -c '.value[] | select(.link) | {id, link: .link.type, hasPassword: .hasPassword}'
   return 1
 }
+reindex_finished() {
+  ct journalctl -u opencloud-reindex --no-pager -o cat >"${STATE_DIR}/reindex.log" 2>&1
+  tail -3 "${STATE_DIR}/reindex.log"
+  grep -qE '\[([0-9]+)/\] indexed space' "${STATE_DIR}/reindex.log" &&
+    grep -q 'opencloud-reindex.service: Deactivated successfully' "${STATE_DIR}/reindex.log"
+}
 log_has() { grep -q -- "$2" "${STATE_DIR}/$1.log"; }
 log_lacks() { ! grep -q -- "$2" "${STATE_DIR}/$1.log"; }
 env_unchanged() { [[ "$(ct sha256sum /etc/opencloud/opencloud.env)" == "$(<"${STATE_DIR}/env.sha")" ]]; }
@@ -135,7 +141,8 @@ update)
   summary_header "After update"
   check "version file is ${want}" version_is "$want"
   check "services running" services_up
-  check "update ran the reindex" log_has update "Rebuilding search index"
+  check "update started the reindex unit" log_has update "Started search index rebuild"
+  check "reindex unit indexed every space and exited cleanly" poll 900 reindex_finished
   check "update printed old-index warning" log_has update "remove the old index"
   check "v8 search index (bleve-v*) created" v8_index_exists
   check "old index left in place" old_index_exists
@@ -166,7 +173,7 @@ migration)
 rerun)
   summary_header "Second update run"
   check "reports no update available" log_has rerun "No update available"
-  check "does not reindex again" log_lacks rerun "Rebuilding search index"
+  check "does not reindex again" log_lacks rerun "search index rebuild"
   check "services running" services_up
   ;;
 *)

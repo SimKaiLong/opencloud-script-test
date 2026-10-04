@@ -11,7 +11,7 @@ on:
         default: SimKaiLong/ProxmoxVE
       patch_ref:
         description: Commit of the change under test
-        default: 07d44239fb5b393fc4533be171ef6e279bfcc747
+        default: 50bb7e3455ae8c9304bac958c31510c9584c7fea
       base_74_ref:
         description: Commit that installs 7.4.0 (upstream main as of 2026-10-03)
         default: 7a9fd31696451fa34de0b3d41af5c9ab9feb4566
@@ -35,6 +35,7 @@ jobs:
           - { name: fresh-arm64, runner: ubuntu-24.04-arm, kind: fresh, base: patch }
           - { name: 7.4-to-8-amd64, runner: ubuntu-24.04, kind: update, base: base_74, from: 7.4.0, rerun: true }
           - { name: 7.4-to-8-arm64, runner: ubuntu-24.04-arm, kind: update, base: base_74, from: 7.4.0 }
+          - { name: 7.4-to-8-search-down, runner: ubuntu-24.04, kind: update, base: base_74, from: 7.4.0, fault: true }
           - { name: 6.2-to-8-amd64, runner: ubuntu-24.04, kind: update, base: base_62, from: 6.2.0, migration: true }
     env:
       PATCH_URL: https://raw.githubusercontent.com/${{ inputs.repo }}/${{ inputs.patch_ref }}
@@ -62,10 +63,18 @@ jobs:
         if: matrix.kind == 'update'
         run: sudo bash harness/verify.sh baseline "${{ matrix.from }}"
 
+      - name: Inject fault (search service down)
+        if: matrix.fault
+        run: sudo bash harness/fault.sh inject
+
       - name: Update to patch
         id: update
         if: matrix.kind == 'update'
         run: sudo bash harness/run-update.sh "$PATCH_URL" update
+
+      - name: Clear fault and check retries
+        if: ${{ !cancelled() && steps.update.outcome == 'success' && matrix.fault }}
+        run: sudo bash harness/fault.sh clear
 
       - name: Verify after update
         if: ${{ !cancelled() && steps.update.outcome == 'success' }}
