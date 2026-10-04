@@ -1,0 +1,56 @@
+name: lint
+
+# ShellCheck and shfmt on the patched scripts, compared with upstream main so
+# only findings introduced by the change count.
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        default: SimKaiLong/ProxmoxVE
+      patch_ref:
+        description: Commit of the change under test
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fetch both versions
+        run: |
+          for f in ct/opencloud.sh install/opencloud-install.sh; do
+            mkdir -p base/$(dirname $f) patch/$(dirname $f)
+            curl -fsSL "https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/$f" -o "base/$f"
+            curl -fsSL "https://raw.githubusercontent.com/${{ inputs.repo }}/${{ inputs.patch_ref }}/$f" -o "patch/$f"
+          done
+          diff -u base patch -r || true
+
+      - name: Install shfmt
+        run: sudo apt-get install -y -qq shfmt >/dev/null && shellcheck --version | head -2 && shfmt --version
+
+      - name: ShellCheck (new findings only)
+        run: |
+          for f in ct/opencloud.sh install/opencloud-install.sh; do
+            # Code + message only, so moved line numbers do not count as new.
+            shellcheck -s bash -f gcc "base/$f" | sed -E 's/^[^:]+:[0-9]+:[0-9]+: //' | sort >base.sc || true
+            shellcheck -s bash -f gcc "patch/$f" | sed -E 's/^[^:]+:[0-9]+:[0-9]+: //' | sort >patch.sc || true
+            echo "## $f: $(wc -l <base.sc) findings upstream, $(wc -l <patch.sc) patched"
+            new="$(comm -13 base.sc patch.sc)"
+            if [[ -n "$new" ]]; then echo "::error::new ShellCheck findings in $f"; echo "$new"; shellcheck -s bash "patch/$f"; exit 1; fi
+          done
+          echo "No new ShellCheck findings"
+
+      - name: "shfmt (upstream style, 2-space indent, indented case)"
+        run: |
+          for f in ct/opencloud.sh install/opencloud-install.sh; do
+            shfmt -i 2 -ci -d "base/$f" >base.fmt || true
+            shfmt -i 2 -ci -d "patch/$f" >patch.fmt || true
+            echo "## $f: $(grep -c '^[-+][^-+]' base.fmt) changed lines upstream, $(grep -c '^[-+][^-+]' patch.fmt) patched"
+            if [[ "$(grep -c '^[-+][^-+]' patch.fmt)" -gt "$(grep -c '^[-+][^-+]' base.fmt)" ]]; then
+              echo "::error::patch adds shfmt differences in $f"; cat patch.fmt; exit 1
+            fi
+          done
+          echo "No new shfmt differences"
