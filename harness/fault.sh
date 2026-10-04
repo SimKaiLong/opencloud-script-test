@@ -15,7 +15,14 @@ retried() {
   echo "opencloud-reindex NRestarts=${n:-none}"
   [[ "${n:-0}" -ge 1 ]]
 }
-unit_waiting() { ct systemctl is-active opencloud-reindex | grep -qE 'activating|active'; }
+# While waiting to retry the unit is "activating/auto-restart"; is-active exits
+# non-zero for that, so read the state instead.
+unit_waiting() {
+  local state
+  state="$(ct systemctl show opencloud-reindex -p ActiveState -p SubState --value | paste -sd/)"
+  echo "opencloud-reindex ${state}"
+  [[ "$state" == activating/* || "$state" == active/* ]]
+}
 
 case "${1:?inject|clear}" in
 inject)
