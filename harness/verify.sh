@@ -50,7 +50,8 @@ public_link_works() {
 reindex_finished() {
   ct journalctl -u opencloud-reindex --no-pager -o cat >"${STATE_DIR}/reindex.log" 2>&1
   tail -3 "${STATE_DIR}/reindex.log"
-  grep -qE '\[([0-9]+)/\] indexed space' "${STATE_DIR}/reindex.log" &&
+  # last progress line reads "[N/N] indexed space ..."
+  awk -F'[][/]' '/indexed space/ {done = ($2 == $3)} END {exit !done}' "${STATE_DIR}/reindex.log" &&
     grep -q 'opencloud-reindex.service: Deactivated successfully' "${STATE_DIR}/reindex.log"
 }
 log_has() { grep -q -- "$2" "${STATE_DIR}/$1.log"; }
