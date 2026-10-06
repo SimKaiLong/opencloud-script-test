@@ -8,7 +8,7 @@ source "$(dirname "$0")/lib.sh"
 ADMIN_PW="$(<"${STATE_DIR}/admin_pw")"
 [[ -f "${STATE_DIR}/seed.env" ]] && source "${STATE_DIR}/seed.env"
 mode="${1:?mode}"
-want="${2:-8.0.1}"
+want="${2:-8.1.0}"
 
 # ── Probes ──────────────────────────────────────────────────────────────────
 version_is() { [[ "$(ct cat /root/.opencloud)" == "$1" ]]; }
@@ -50,8 +50,12 @@ public_link_works() {
 reindex_finished() {
   ct journalctl -u opencloud-reindex --no-pager -o cat >"${STATE_DIR}/reindex.log" 2>&1
   tail -3 "${STATE_DIR}/reindex.log"
-  # last progress line reads "[N/N] indexed space ..."
-  awk -F'[][/]' '/indexed space/ {done = ($2 == $3)} END {exit !done}' "${STATE_DIR}/reindex.log" &&
+  # 8.1 progress lines read "[ 3/12 SUCCESS] <id> indexed in ..."; done when the last
+  # counter reaches the total with no ERROR line
+  awk '/^\[ *[0-9]+\/[0-9]+ (SUCCESS|SKIPPED|ERROR)/ {
+         s = $0; sub(/^\[ */, "", s); split(s, a, /[\/ ]/); done = (a[1] == a[2])
+         if ($0 ~ /\/[0-9]+ ERROR/) err = 1
+       } END { exit !(done && !err) }' "${STATE_DIR}/reindex.log" &&
     grep -q 'opencloud-reindex.service: Deactivated successfully' "${STATE_DIR}/reindex.log"
 }
 env_unchanged() { [[ "$(ct sha256sum /etc/opencloud/opencloud.env)" == "$(<"${STATE_DIR}/env.sha")" ]]; }

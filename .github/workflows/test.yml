@@ -11,7 +11,7 @@ on:
         default: SimKaiLong/ProxmoxVE
       patch_ref:
         description: Commit of the change under test
-        default: 2956866b2086c0c83638d962bbd653b03a302ac2
+        default: 0b60215c7ed5c3bf8dd33faefc6abc2c8b201d61
       base_74_ref:
         description: Commit that installs 7.4.0 (upstream main as of 2026-10-03)
         default: 7a9fd31696451fa34de0b3d41af5c9ab9feb4566
