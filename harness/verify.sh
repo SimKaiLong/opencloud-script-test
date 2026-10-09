@@ -198,14 +198,14 @@ migration)
 rerun)
   summary_header "Second update run"
   check "reports no update available" log_has rerun "No update available"
-  check "does not reindex again" log_lacks rerun "search index"
+  check "does not reindex again" log_lacks rerun "Rebuilding search index"
   check "services running" services_up
   ;;
 integrity)
   summary_header "After update (no reindex expected)"
   check "version file is ${want}" version_is "$want"
   check "services running" services_up
-  check "no reindex on this path" log_lacks update "search index"
+  check "no reindex on this path" log_lacks update "Rebuilding search index"
   check "search finds personal file" search_poll quokka zebra-quokka-8841.txt 300
   check "search finds space file" search_poll marmot marmot-lantern-5107.txt 300
   check "bob is still a QA-Space member" bob_is_member
