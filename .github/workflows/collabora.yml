@@ -14,7 +14,7 @@ on:
         default: d3a6a4a7311baa3829ce3ceaa3772d2b77040194
       base_81_ref:
         description: Commit that installs 8.1.0 without the fix (upstream main, 2026-10-09)
-        default: d271571
+        default: d271571ff78e0d695b0a2e1dd4f64bcccb080210
       base_74_ref:
         description: Commit that installs 7.4.0 (upstream main as of 2026-10-03)
         default: 7a9fd31696451fa34de0b3d41af5c9ab9feb4566
