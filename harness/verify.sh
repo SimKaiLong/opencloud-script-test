@@ -18,6 +18,27 @@ old_index_exists() { ct test -d /var/lib/opencloud/search/bleve; }
 admin_login() { api GET /graph/v1.0/me -o /dev/null; }
 collabora_registered() { curl -sS --cacert "$CA_FILE" "${OC_URL}/app/list" | grep -q Collabora; }
 
+# frame-ancestors from the CSP header Collabora sends with its editor page, the one
+# the browser checks before showing the iframe inside OpenCloud
+collabora_frame_ancestors() {
+  ct bash -c 'h=$(curl -s http://127.0.0.1:9980/hosting/discovery | grep -o "/browser/[0-9a-f]*/cool.html" | head -1)
+    [[ -n "$h" ]] || exit 1
+    curl -s -D - -o /dev/null "http://127.0.0.1:9980${h}?WOPISrc=https%3A%2F%2Fwopi.oc.test%2Fwopi%2Ffiles%2Ft" |
+      tr -d "\r" | grep -i "^content-security-policy:" | tr ";" "\n" | grep -i frame-ancestors'
+}
+csp_allows_oc() {
+  local fa
+  fa="$(collabora_frame_ancestors)" || return 1
+  echo "coolwsd $(ct dpkg-query -W -f='${Version}' coolwsd): ${fa}"
+  grep -q 'https://cloud.oc.test' <<<"$fa"
+}
+csp_blocks_oc() {
+  local fa
+  fa="$(collabora_frame_ancestors)" || return 1
+  echo "coolwsd $(ct dpkg-query -W -f='${Version}' coolwsd): ${fa}"
+  ! grep -q 'cloud.oc.test' <<<"$fa"
+}
+
 # search_finds <term> <filename>
 search_finds() {
   local body
@@ -179,6 +200,45 @@ rerun)
   check "reports no update available" log_has rerun "No update available"
   check "does not reindex again" log_lacks rerun "search index"
   check "services running" services_up
+  ;;
+integrity)
+  summary_header "After update (no reindex expected)"
+  check "version file is ${want}" version_is "$want"
+  check "services running" services_up
+  check "no reindex on this path" log_lacks update "search index"
+  check "search finds personal file" search_poll quokka zebra-quokka-8841.txt 300
+  check "search finds space file" search_poll marmot marmot-lantern-5107.txt 300
+  check "bob is still a QA-Space member" bob_is_member
+  check "alice still sees shared folder" alice_sees_share
+  check "public link still opens with password" public_link_works
+  check "user list unchanged" users_unchanged
+  check "alice can still log in" user_can_login alice
+  check "bob can still log in" user_can_login bob
+  check "all 303 file contents intact (sha256)" contents_intact
+  check "all file IDs unchanged (no client resync)" fileids_unchanged
+  check "older file versions kept" versions_kept
+  check "trash kept" trash_kept
+  check "opencloud.env unchanged" env_unchanged
+  check "admin password unchanged" admin_pw_unchanged
+  ;;
+csp-broken)
+  summary_header "Collabora embedding before the fix"
+  check "bug reproduced: Collabora's CSP does not allow the OpenCloud domain" poll 120 csp_blocks_oc
+  ;;
+csp-fixed)
+  summary_header "Collabora embedding"
+  check "Collabora's CSP frame-ancestors allows the OpenCloud domain" poll 120 csp_allows_oc
+  check "services running" services_up
+  check "Collabora registered via WOPI discovery" poll 180 collabora_registered
+  ;;
+csp-update)
+  summary_header "Collabora fix applied by update"
+  check "update applied the Collabora fix" log_has "${3:-update}" "Allowed OpenCloud to embed Collabora"
+  ;;
+csp-rerun)
+  summary_header "Collabora fix on a second update"
+  check "fix not applied twice" log_lacks rerun "embed Collabora"
+  check "Collabora's CSP still allows the OpenCloud domain" poll 120 csp_allows_oc
   ;;
 *)
   echo "unknown mode: $mode"

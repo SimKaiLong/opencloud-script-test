@@ -1,0 +1,108 @@
+name: collabora
+
+# Collabora 26.04.4 frame-ancestors fix: fresh installs, and updates from
+# installs made before the fix (current upstream main = 8.1.0, and 7.4.0).
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: ProxmoxVE fork holding the branches under test
+        default: SimKaiLong/ProxmoxVE
+      patch_ref:
+        description: Commit of the change under test
+        default: d3a6a4a7311baa3829ce3ceaa3772d2b77040194
+      base_81_ref:
+        description: Commit that installs 8.1.0 without the fix (upstream main, 2026-10-09)
+        default: d271571
+      base_74_ref:
+        description: Commit that installs 7.4.0 (upstream main as of 2026-10-03)
+        default: 7a9fd31696451fa34de0b3d41af5c9ab9feb4566
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: fresh-amd64, runner: ubuntu-24.04, kind: fresh, base: patch }
+          - { name: fresh-arm64, runner: ubuntu-24.04-arm, kind: fresh, base: patch }
+          - { name: 8.1-to-fix-amd64, runner: ubuntu-24.04, kind: update, base: base_81, from: 8.1.0, rerun: true }
+          - { name: 8.1-to-fix-arm64, runner: ubuntu-24.04-arm, kind: update, base: base_81, from: 8.1.0 }
+          - { name: 7.4-to-fix-amd64, runner: ubuntu-24.04, kind: update, base: base_74, from: 7.4.0 }
+    env:
+      PATCH_URL: https://raw.githubusercontent.com/${{ inputs.repo }}/${{ inputs.patch_ref }}
+      INSTALL_URL: https://raw.githubusercontent.com/${{ inputs.repo }}/${{ matrix.base == 'patch' && inputs.patch_ref || matrix.base == 'base_81' && inputs.base_81_ref || inputs.base_74_ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host prep
+        run: sudo -E bash harness/host-prep.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Install via ct/opencloud.sh
+        run: sudo -E bash harness/run-install.sh opencloud "$INSTALL_URL"
+
+      - name: TLS, DNS and basic auth
+        run: sudo bash harness/tls-setup.sh
+
+      # ── fresh install with the fix ──
+      - name: Verify fresh install
+        if: matrix.kind == 'fresh'
+        run: sudo bash harness/verify.sh fresh 8.1.0
+
+      - name: Verify Collabora embedding
+        if: matrix.kind == 'fresh'
+        run: sudo bash harness/verify.sh csp-fixed
+
+      # ── update an install made without the fix ──
+      - name: Reproduce the bug
+        if: matrix.kind == 'update'
+        run: sudo bash harness/verify.sh csp-broken
+
+      - name: Seed data
+        if: matrix.kind == 'update'
+        run: sudo bash harness/seed.sh
+
+      - name: Verify before update
+        if: matrix.kind == 'update'
+        run: sudo bash harness/verify.sh baseline "${{ matrix.from }}"
+
+      - name: Update to patch
+        id: update
+        if: matrix.kind == 'update'
+        run: sudo bash harness/run-update.sh "$PATCH_URL" update
+
+      - name: Verify Collabora fix
+        if: ${{ !cancelled() && steps.update.outcome == 'success' }}
+        run: sudo bash harness/verify.sh csp-update && sudo bash harness/verify.sh csp-fixed
+
+      - name: Verify data after update
+        if: ${{ !cancelled() && steps.update.outcome == 'success' }}
+        run: sudo bash harness/verify.sh "${{ matrix.from == '8.1.0' && 'integrity' || 'update' }}"
+
+      - name: Update again
+        id: rerun
+        if: ${{ !cancelled() && steps.update.outcome == 'success' && matrix.rerun }}
+        run: sudo bash harness/run-update.sh "$PATCH_URL" rerun
+
+      - name: Verify second run
+        if: ${{ !cancelled() && steps.rerun.outcome == 'success' }}
+        run: sudo bash harness/verify.sh csp-rerun
+
+      - name: Collect
+        if: always()
+        run: sudo bash harness/collect.sh artifacts && sudo chown -R "$USER" artifacts
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ matrix.name }}
+          path: artifacts
